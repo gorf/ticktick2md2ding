@@ -4,6 +4,24 @@
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $MarkerFile = Join-Path $ScriptDir ".last_ticktick_run"
+$LogFile = Join-Path $ScriptDir ".last_ticktick_run.log"
+
+# 计划任务环境下 PATH 可能不含 Python，按顺序尝试 python / py
+$PythonExe = $null
+$PythonArgs = @("ticktick_focus.py", "-d", "--dingtalk")
+foreach ($py in @("python", "py")) {
+    try {
+        $info = Get-Command $py -ErrorAction Stop
+        $PythonExe = $info.Source
+        if ($py -eq "py") { $PythonArgs = @("-3") + $PythonArgs }
+        break
+    } catch { }
+}
+if (-not $PythonExe) {
+    $msg = "未找到 Python，请确保已安装并加入 PATH。时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    $msg | Out-File -FilePath $LogFile -Encoding utf8
+    exit 1
+}
 
 $Yesterday = (Get-Date).AddDays(-1).ToString("yyyy-MM-dd")
 $Now = Get-Date
@@ -23,9 +41,14 @@ if (Test-Path $MarkerFile) {
 
 Set-Location $ScriptDir
 try {
-    & python ticktick_focus.py -d --dingtalk
+    & $PythonExe @PythonArgs
     if ($LASTEXITCODE -eq 0) {
         Set-Content -Path $MarkerFile -Value $Yesterday -NoNewline
+        "OK $Yesterday $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $LogFile -Encoding utf8
+    } else {
+        "EXIT $LASTEXITCODE $Yesterday $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $LogFile -Encoding utf8
     }
-} finally {
+} catch {
+    "ERROR: $_ $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $LogFile -Encoding utf8
+    exit 1
 }

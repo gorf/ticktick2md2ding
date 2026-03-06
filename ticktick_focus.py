@@ -228,6 +228,7 @@ def main():
 
         total_min = 0
         record_count = 0
+        task_count = 0
         merged_focus_lines: list[str] = []
         merged_tasks_lines: list[str] = []
         try:
@@ -312,6 +313,7 @@ def main():
                 update_model_config(ClosedRespV2, extra="allow")
             closed = ClosedRespV2.model_validate(resp)
             tasks = list(closed.root) if hasattr(closed, "root") else (closed if isinstance(closed, list) else [])
+            task_count = len(tasks)
             if tasks:
                 from collections import Counter
                 titles = [
@@ -334,13 +336,13 @@ def main():
         out("## 专注统计汇总")
         out(f"{label}: {record_count} 番茄, {total_min} 分钟")
 
-        # 写入当前目录
+        # 写入日记目录，文件名后缀为日期
         diary_dir = Path(__file__).parent
         out_path = diary_dir / f"ticktick_{target.strftime('%Y-%m-%d')}.md"
         out_path.write_text("\n".join(lines), encoding="utf-8")
         print(f"已写入: {out_path}")
 
-        # 填入日记模板（需项目在 Obsidian vault 的 日记 目录下，或 vault 为项目上级目录）
+        # 填入日记模板
         if args.diary:
             vault_root = diary_dir.parent
             template_path = vault_root / "模板" / "日记模板_每日笔记用.md"
@@ -353,6 +355,14 @@ def main():
                 tpl = tpl.replace("{{time:HH:mm}}", datetime.now().strftime("%H:%M"))
                 tpl = tpl.replace("（创建后请手动补充日期链接，如 [[YYYY-MM-DD]]）", f"[[{prev_date}]]")
                 tpl = tpl.replace("（创建后请手动补充日期链接）", f"[[{next_date}]]")
+                # 填充 一句话总结：专注番茄数、时长、完成任务数
+                parts = []
+                if record_count > 0 or total_min > 0:
+                    parts.append(f"专注 {record_count} 个番茄共 {total_min} 分钟")
+                if task_count > 0:
+                    parts.append(f"完成 {task_count} 项任务")
+                summary = "；".join(parts) + "。" if parts else "（待补充）"
+                tpl = tpl.replace("**一句话总结**：今天...", f"**一句话总结**：今天{summary}")
                 today_done = merged_focus_lines if merged_focus_lines else merged_tasks_lines
                 if not today_done:
                     today_done = ["- （待补充）"]
@@ -379,7 +389,7 @@ def main():
         if dingtalk_url:
             block = (
                 f"\n\n## 钉钉工作日志\n\n"
-                f"复制下方链接到浏览器或钉钉内打开：\n\n"
+                f"复制下方链接到**浏览器地址栏**或钉钉内打开（Cursor 内直接点会报错）：\n\n"
                 f"```\n{dingtalk_url}\n```\n"
             )
             if diary_path.exists():
