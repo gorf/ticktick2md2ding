@@ -28,27 +28,41 @@ $Now = Get-Date
 
 # 仅当当前时间 >= 1:00 时才执行
 if ($Now.Hour -lt 1) {
+    "SKIP 未到1点 $($Now.ToString('yyyy-MM-dd HH:mm'))" | Out-File -FilePath $LogFile -Encoding utf8
     exit 0
 }
 
 # 避免同一天重复跑
 if (Test-Path $MarkerFile) {
-    $Last = Get-Content $MarkerFile -Raw
+    $Last = (Get-Content $MarkerFile -Raw).Trim()
     if ($Last -eq $Yesterday) {
+        "SKIP 已跑过 $Yesterday $($Now.ToString('yyyy-MM-dd HH:mm'))" | Out-File -FilePath $LogFile -Encoding utf8
         exit 0
     }
 }
 
 Set-Location $ScriptDir
+$RunAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 try {
-    & $PythonExe @PythonArgs
-    if ($LASTEXITCODE -eq 0) {
+    # Python/pyticktick 的 WARNING 会写 stderr，PowerShell Stop 模式下会当错误抛出，临时改为 Continue
+    $oldEA = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $pyOut = & $PythonExe @PythonArgs 2>&1
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $oldEA
+    $outText = $pyOut | Out-String
+    if ($exitCode -eq 0) {
         Set-Content -Path $MarkerFile -Value $Yesterday -NoNewline
-        "OK $Yesterday $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $LogFile -Encoding utf8
+        @(
+            "OK $Yesterday $RunAt",
+            "生成: 日记/$Yesterday.md, ticktick_$Yesterday.md",
+            $outText
+        ) | Out-File -FilePath $LogFile -Encoding utf8
     } else {
-        "EXIT $LASTEXITCODE $Yesterday $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $LogFile -Encoding utf8
+        @("EXIT $exitCode $Yesterday $RunAt", $outText) | Out-File -FilePath $LogFile -Encoding utf8
+        exit $exitCode
     }
 } catch {
-    "ERROR: $_ $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $LogFile -Encoding utf8
+    "ERROR: $_ $RunAt" | Out-File -FilePath $LogFile -Encoding utf8
     exit 1
 }

@@ -342,6 +342,26 @@ def main():
         out_path.write_text("\n".join(lines), encoding="utf-8")
         print(f"已写入: {out_path}")
 
+        def _extract_done_title(done_line: str) -> str:
+            """
+            将 “今日完成” 的一行，提取成更短的“任务名”。
+            示例：
+            - "- [x] yoga x2" -> "yoga"
+            - "- 无目的阅读 8 50m" -> "无目的阅读"
+            """
+            import re
+            s = done_line.strip()
+            m = re.match(r"^- \[x\] (.+?)(?: x\d+)?\s*$", s)
+            if m:
+                return m.group(1).strip()
+            m = re.match(r"^- (.+?)\s+\d+m\s*$", s)
+            if m:
+                return m.group(1).strip()
+            m = re.match(r"^- (.+)\s*$", s)
+            if m:
+                return m.group(1).strip()
+            return s
+
         # 填入日记模板
         if args.diary:
             vault_root = diary_dir.parent
@@ -355,15 +375,24 @@ def main():
                 tpl = tpl.replace("{{time:HH:mm}}", datetime.now().strftime("%H:%M"))
                 tpl = tpl.replace("（创建后请手动补充日期链接，如 [[YYYY-MM-DD]]）", f"[[{prev_date}]]")
                 tpl = tpl.replace("（创建后请手动补充日期链接）", f"[[{next_date}]]")
-                # 填充 一句话总结：专注番茄数、时长、完成任务数
+                # 填充 一句话总结：把“今天完成的具体任务名”也写进去
+                today_done = merged_focus_lines if merged_focus_lines else merged_tasks_lines
+                first_task = _extract_done_title(today_done[0]) if today_done else ""
+
                 parts = []
                 if record_count > 0 or total_min > 0:
                     parts.append(f"专注 {record_count} 个番茄共 {total_min} 分钟")
                 if task_count > 0:
-                    parts.append(f"完成 {task_count} 项任务")
+                    if first_task:
+                        parts.append(f"完成 {task_count} 项任务：{first_task}")
+                    else:
+                        parts.append(f"完成 {task_count} 项任务")
+                elif first_task:
+                    parts.append(f"今日完成：{first_task}")
+
                 summary = "；".join(parts) + "。" if parts else "（待补充）"
                 tpl = tpl.replace("**一句话总结**：今天...", f"**一句话总结**：今天{summary}")
-                today_done = merged_focus_lines if merged_focus_lines else merged_tasks_lines
+
                 if not today_done:
                     today_done = ["- （待补充）"]
                 done_block = "\n".join(today_done)
@@ -384,7 +413,26 @@ def main():
         dingtalk_url: str | None = None
         if args.dingtalk:
             today_done = merged_focus_lines if merged_focus_lines else merged_tasks_lines
-            content_text = "\n".join(today_done) if today_done else "（无）"
+            first_task = _extract_done_title(today_done[0]) if today_done else ""
+
+            # 一句话总结（与日记模板一致）+ 今日完成列表
+            parts = []
+            if record_count > 0 or total_min > 0:
+                parts.append(f"专注 {record_count} 个番茄共 {total_min} 分钟")
+            if task_count > 0:
+                if first_task:
+                    parts.append(f"完成 {task_count} 项任务：{first_task}")
+                else:
+                    parts.append(f"完成 {task_count} 项任务")
+            elif first_task:
+                parts.append(f"今日完成：{first_task}")
+
+            summary = "；".join(parts) + "。" if parts else "（待补充）"
+            content_lines = [f"一句话总结：今天{summary}"]
+            if today_done:
+                content_lines.append("")
+                content_lines.extend(today_done)
+            content_text = "\n".join(content_lines)
             dingtalk_url = _push_dingtalk(target, content_text)
         if dingtalk_url:
             block = (
