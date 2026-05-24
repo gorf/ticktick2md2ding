@@ -46,7 +46,8 @@ if env_file.exists():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+                key = k.strip().lstrip("\ufeff")
+                os.environ.setdefault(key, v.strip().strip('"').strip("'"))
 
 def _day_range(dt: datetime):
     """某日 0 点和 24 点的毫秒时间戳（本地时区）"""
